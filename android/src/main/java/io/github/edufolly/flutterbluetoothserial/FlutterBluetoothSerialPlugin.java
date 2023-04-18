@@ -16,6 +16,7 @@ import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import android.os.Build;
 import android.util.Log;
 import android.util.SparseArray;
 import android.os.AsyncTask;
@@ -50,6 +51,7 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
 
     // Permissions and request constants
     private static final int REQUEST_COARSE_LOCATION_PERMISSIONS = 1451;
+    private static final int REQUEST_BLUETOOTH_SCAN_PERMISSIONS = 1991;
     private static final int REQUEST_ENABLE_BLUETOOTH = 1337;
     private static final int REQUEST_DISCOVERABLE_BLUETOOTH = 2137;
 
@@ -412,6 +414,10 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
                             pendingPermissionsEnsureCallbacks.onResult(grantResults[0] == PackageManager.PERMISSION_GRANTED);
                             pendingPermissionsEnsureCallbacks = null;
                             return true;
+                        case REQUEST_BLUETOOTH_SCAN_PERMISSIONS:
+                            pendingPermissionsEnsureCallbacks.onResult(grantResults[0] == PackageManager.PERMISSION_GRANTED);
+                            pendingPermissionsEnsureCallbacks = null;
+                            return true;
                     }
                     return false;
                 }
@@ -444,20 +450,37 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
     EnsurePermissionsCallback pendingPermissionsEnsureCallbacks = null;
 
     private void ensurePermissions(EnsurePermissionsCallback callbacks) {
-        if (
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+            if (
                 ContextCompat.checkSelfPermission(activity,
-                        Manifest.permission.ACCESS_COARSE_LOCATION)
-                        != PackageManager.PERMISSION_GRANTED
-                        || ContextCompat.checkSelfPermission(activity,
-                        Manifest.permission.ACCESS_FINE_LOCATION)
-                        != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(activity,
+                    Manifest.permission.ACCESS_COARSE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(activity,
+                    Manifest.permission.ACCESS_FINE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(activity,
                     new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION},
                     REQUEST_COARSE_LOCATION_PERMISSIONS);
 
-            pendingPermissionsEnsureCallbacks = callbacks;
+                pendingPermissionsEnsureCallbacks = callbacks;
+            } else {
+                callbacks.onResult(true);
+            }
         } else {
-            callbacks.onResult(true);
+            if (
+                ContextCompat.checkSelfPermission(activity,
+                    Manifest.permission.BLUETOOTH_SCAN)
+                    != PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(activity,
+                    Manifest.permission.BLUETOOTH_CONNECT)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(activity,
+                    new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT},
+                    REQUEST_BLUETOOTH_SCAN_PERMISSIONS);
+                pendingPermissionsEnsureCallbacks = callbacks;
+            } else {
+                callbacks.onResult(true);
+            }
         }
     }
 
@@ -549,6 +572,7 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
 
     private class FlutterBluetoothSerialMethodCallHandler implements MethodCallHandler {
         /// Provides access to the plugin methods
+        @SuppressLint("MissingPermission")
         @Override
         public void onMethodCall(MethodCall call, Result result) {
             if (bluetoothAdapter == null) {
@@ -580,9 +604,16 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
 
                 case "requestEnable":
                     if (!bluetoothAdapter.isEnabled()) {
-                        pendingResultForActivityResult = result;
-                        Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                        ActivityCompat.startActivityForResult(activity, intent, REQUEST_ENABLE_BLUETOOTH, null);
+                        ensurePermissions(granted -> {
+                            if (!granted) {
+                                result.error("no_permissions", "Enabling bluetooth requires bluetooth permission", null);
+                                return;
+                            }
+
+                            pendingResultForActivityResult = result;
+                            Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                            ActivityCompat.startActivityForResult(activity, intent, REQUEST_ENABLE_BLUETOOTH, null);
+                        });
                     } else {
                         result.success(true);
                     }
@@ -590,8 +621,15 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
 
                 case "requestDisable":
                     if (bluetoothAdapter.isEnabled()) {
+                        ensurePermissions(granted -> {
+                            if (!granted) {
+                                result.error("no_permissions", "Enabling bluetooth requires bluetooth permission", null);
+                                return;
+                            }
+
                         bluetoothAdapter.disable();
                         result.success(true);
+                        });
                     } else {
                         result.success(false);
                     }
