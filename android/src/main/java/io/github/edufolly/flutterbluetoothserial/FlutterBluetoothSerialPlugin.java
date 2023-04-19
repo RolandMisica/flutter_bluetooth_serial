@@ -411,13 +411,17 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
                 (requestCode, permissions, grantResults) -> {
                     switch (requestCode) {
                         case REQUEST_COARSE_LOCATION_PERMISSIONS:
-                            pendingPermissionsEnsureCallbacks.onResult(grantResults[0] == PackageManager.PERMISSION_GRANTED);
-                            pendingPermissionsEnsureCallbacks = null;
-                            return true;
+                            if(grantResults.length > 0) {
+                                pendingPermissionsEnsureCallbacks.onResult(grantResults[0] == PackageManager.PERMISSION_GRANTED);
+                                pendingPermissionsEnsureCallbacks = null;
+                                return true;
+                            }
                         case REQUEST_BLUETOOTH_SCAN_PERMISSIONS:
-                            pendingPermissionsEnsureCallbacks.onResult(grantResults[0] == PackageManager.PERMISSION_GRANTED);
-                            pendingPermissionsEnsureCallbacks = null;
-                            return true;
+                            if(grantResults.length > 0) {
+                                pendingPermissionsEnsureCallbacks.onResult(grantResults[0] == PackageManager.PERMISSION_GRANTED);
+                                pendingPermissionsEnsureCallbacks = null;
+                                return true;
+                            }
                     }
                     return false;
                 }
@@ -931,20 +935,27 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
                     break;
 
                 case "getBondedDevices":
-                    List<Map<String, Object>> list = new ArrayList<>();
-                    for (BluetoothDevice device : bluetoothAdapter.getBondedDevices()) {
-                        Map<String, Object> entry = new HashMap<>();
-                        entry.put("address", device.getAddress());
-                        entry.put("name", device.getName());
-                        entry.put("type", device.getType());
-                        entry.put("isConnected", checkIsDeviceConnected(device));
-                        entry.put("bondState", BluetoothDevice.BOND_BONDED);
-                        list.add(entry);
-                    }
-                    
-                    result.success(list);
-                    break;
+                    ensurePermissions(granted -> {
+                        if (!granted) {
+                            result.error("no_permissions", "discovering other devices requires location access permission", null);
+                            return;
+                        }
 
+                        List<Map<String, Object>> list = new ArrayList<>();
+                        for (BluetoothDevice device : bluetoothAdapter.getBondedDevices()) {
+                            Map<String, Object> entry = new HashMap<>();
+                            entry.put("address", device.getAddress());
+                            entry.put("name", device.getName());
+                            entry.put("type", device.getType());
+                            entry.put("isConnected", checkIsDeviceConnected(device));
+                            entry.put("bondState", BluetoothDevice.BOND_BONDED);
+                            list.add(entry);
+                        }
+
+                        result.success(list);
+                    });
+                    break;
+                    
                 case "isDiscovering":
                     result.success(bluetoothAdapter.isDiscovering());
                     break;
